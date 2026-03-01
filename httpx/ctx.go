@@ -4,7 +4,10 @@ import (
 	"Fuse/core"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"reflect"
+	"strconv"
 	"sync"
 )
 
@@ -198,9 +201,77 @@ func (c *Ctx) Render(res core.Result) {
 	c.JSON(status, res)
 }
 
+// 读取数据到结构体中
+func (c *Ctx) Bind(v any) error {
+	// 获取传入数据的值
+	val := reflect.ValueOf(v)
+
+	// 必须要是指针并且指向结构体
+	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
+		return errors.New("Bind: expected a pointer to a struct")
+	}
+
+	// 尝试解析JSON
+	if c.Request.Body != nil && c.Request.Header.Get("Content-Type") == "application/json" {
+		// JSON格式错误
+		if err := json.NewDecoder(c.Request.Body).Decode(v); err != nil {
+			return err
+		}
+	}
+
+	// 解析结构体中的路由和查询参数
+	elem := val.Elem()
+	typ := elem.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		// 字段信息
+		field := typ.Field(i)
+		// 字段实际值
+		fieldVal := elem.Field(i)
+
+		// 小写字段不可渲染
+		if !fieldVal.CanSet() {
+			continue
+		}
+
+		var valStr string
+		if paramTag := field.Tag.Get("param"); paramTag != "" {
+			valStr = c.Param(paramTag)
+		} else if queryTag := field.Tag.Get("query"); queryTag != "" {
+			valStr = c.Query(queryTag)
+		}
+
+		if valStr == "" {
+			continue
+		}
+
+		switch fieldVal.Kind() {
+		case reflect.String:
+			fieldVal.SetString(valStr)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if intVal, err := strconv.ParseInt(valStr, 10, 64); err == nil {
+				fieldVal.SetInt(intVal)
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			if uintVal, err := strconv.ParseUint(valStr, 10, 64); err == nil {
+				fieldVal.SetUint(uintVal)
+			}
+		case reflect.Float32, reflect.Float64:
+			if floatVal, err := strconv.ParseFloat(valStr, 64); err == nil {
+				fieldVal.SetFloat(floatVal)
+			}
+		case reflect.Bool:
+			if boolVal, err := strconv.ParseBool(valStr); err == nil {
+				fieldVal.SetBool(boolVal)
+			}
+		}
+	}
+	return nil
+}
+
 // 获取路径参数
 func (c *Ctx) Param(key string) string {
-	val, ok := c.values["param-"+key]
+	val, ok := c.Get("param-" + key)
 	if !ok {
 		return ""
 
