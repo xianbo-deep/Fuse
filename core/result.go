@@ -36,12 +36,9 @@ func Fail(code int, msg string) Result {
 	}
 }
 
-func (r Result) WithMsg(msg string, data any) Result {
-	return Result{
-		Code: 0,
-		Data: data,
-		Msg:  msg,
-	}
+func (r Result) WithMsg(msg string) Result {
+	r.Msg = msg
+	return r
 }
 
 func (r Result) WithMeta(k, v string) Result {
@@ -49,6 +46,11 @@ func (r Result) WithMeta(k, v string) Result {
 		r.Meta = map[string]string{}
 	}
 	r.Meta[k] = v
+	return r
+}
+
+func (r Result) WithData(data any) Result {
+	r.Data = data
 	return r
 }
 
