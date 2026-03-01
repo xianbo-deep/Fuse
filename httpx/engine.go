@@ -80,5 +80,12 @@ func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 
 	// 执行中间件
 	c.resetHandlers(hs)
-	c.Next()
+	res := c.Next()
+
+	// 渲染
+	if !c.Writer.Written() {
+		if res.Code != 0 || res.Data != nil || res.Msg != "" {
+			c.Render(res)
+		}
+	}
 }

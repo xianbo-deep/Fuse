@@ -15,7 +15,7 @@ type node struct {
 // 插入路由节点
 func (n *node) insert(pattern string, parts []string, height int) {
 	// 达到底部
-	if len(parts) == height || n.isWild {
+	if len(parts) == height {
 		n.pattern = pattern
 		return
 	}
@@ -49,7 +49,10 @@ func (n *node) matchChild(part string) *node {
 func (n *node) search(parts []string, height int, params map[string]string) *node {
 	// 达到底部 返回
 	if len(parts) == height {
-		return n
+		if n.pattern != "" {
+			return n
+		}
+		return nil
 	}
 
 	part := parts[height]

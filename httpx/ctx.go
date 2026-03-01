@@ -60,18 +60,11 @@ func (c *Ctx) Get(key string) (any, bool) {
 
 func (c *Ctx) Next() core.Result {
 	c.index++
-	for ; c.index < len(c.handlers); c.index++ {
+	if c.index < len(c.handlers) {
 		if c.aborted {
 			return core.Result{}
 		}
-		res := c.handlers[c.index](c)
-		if c.index == len(c.handlers)-1 && !c.Writer.Written() {
-			if res.Code != 0 || res.Data != nil || res.Msg != "" {
-				c.Render(res)
-			}
-		}
-
-		return res
+		return c.handlers[c.index](c)
 	}
 	return core.Result{}
 }
@@ -194,18 +187,15 @@ func (c *Ctx) Render(res core.Result) {
 	}
 
 	// 映射状态码
-	status := httpStatusFromBizCode(res.Code)
+	status := res.GetHttpStatus()
 
-	// 写入响应体
-	if res.Code == core.CodeSuccess {
-		switch v := res.Data.(type) {
-		case string:
-			c.String(status, v)
-		default:
-			c.JSON(status, v)
-		}
+	// 没设置则走框架默认
+	if status == 0 {
+		status = httpStatusFromBizCode(res.Code)
 	}
 
+	// 响应
+	c.JSON(status, res)
 }
 
 // 获取路径参数
@@ -216,6 +206,14 @@ func (c *Ctx) Param(key string) string {
 
 	}
 	return val.(string)
+}
+
+// 获取查询参数
+func (c *Ctx) Query(key string) string {
+	if c.Request == nil {
+		return ""
+	}
+	return c.Request.URL.Query().Get(key)
 }
 
 func (c *Ctx) Success(data any) core.Result {

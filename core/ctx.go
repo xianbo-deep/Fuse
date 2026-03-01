@@ -30,8 +30,10 @@ type Ctx interface {
 	Success(data any) Result
 	Fail(code int, msg string) Result
 
-	// 获取值
+	// 获取路径参数
 	Param(key string) string
+	// 获取查询参数
+	Query(key string) string
 
 	// 记录错误
 	Err(err error)

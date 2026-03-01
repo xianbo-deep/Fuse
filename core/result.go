@@ -14,6 +14,9 @@ type Result struct {
 
 	// 跨协议元信息
 	Meta map[string]string `json:"meta,omitempty"`
+
+	// http状态码
+	httpStatus int
 }
 
 func Success(data any) Result {
@@ -44,4 +47,12 @@ func (r Result) WithMeta(k, v string) Result {
 	}
 	r.Meta[k] = v
 	return r
+}
+
+func (r Result) WithHttpCode(status int) Result {
+	r.httpStatus = status
+	return r
+}
+func (r Result) GetHttpStatus() int {
+	return r.httpStatus
 }
