@@ -63,12 +63,16 @@ func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	c.Set(core.CtxKeyPath, request.URL.Path)
 
 	// 根据请求路径匹配业务方法
-	h := e.router.Match(request.Method, request.URL.Path)
+	h, params := e.router.Match(request.Method, request.URL.Path)
 	if h == nil {
 		c.Render(core.Fail(core.CodeNotFound, "未找到路由"))
 		return
 	}
 
+	// 记录路径参数映射表
+	for k, v := range params {
+		c.Set("param-"+k, v)
+	}
 	// 组装中间件
 	hs := make([]core.HandlerFunc, 0, len(e.mws)+1)
 	hs = append(hs, e.mws...)

@@ -3,6 +3,7 @@ package main
 import (
 	"Fuse/fuse"
 	"Fuse/middleware"
+	"log"
 )
 
 func main() {
@@ -11,7 +12,9 @@ func main() {
 	app.Use(middleware.Defaults()...)
 
 	httpSrv := app.HTTP()
-	httpSrv.Get("/ping", func(c fuse.Context) fuse.Result {
+	httpSrv.Get("/ping/:id", func(c fuse.Context) fuse.Result {
+		id := c.Param("id")
+		log.Printf("id: %s", id)
 		return c.Success(fuse.H{"message": "pong"})
 	})
 

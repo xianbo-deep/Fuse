@@ -93,18 +93,24 @@ func (c *Ctx) Copy() core.Ctx {
 		ctx:      c.ctx,
 		Writer:   c.Writer,
 		Request:  c.Request,
-		values:   make(map[string]any),
 		aborted:  c.aborted,
 		handlers: c.handlers,
 		index:    c.index,
+		values:   make(map[string]any),
 	}
 
+	// 拷贝哈希表
 	for k, v := range c.values {
 		cp.values[k] = v
 	}
 
-	return cp
+	// 拷贝错误列表
+	if c.errs != nil {
+		cp.errs = make([]error, len(c.errs))
+		copy(cp.errs, c.errs)
+	}
 
+	return cp
 }
 
 func (c *Ctx) Aborted() bool {
@@ -200,6 +206,16 @@ func (c *Ctx) Render(res core.Result) {
 		}
 	}
 
+}
+
+// 获取路径参数
+func (c *Ctx) Param(key string) string {
+	val, ok := c.values["param-"+key]
+	if !ok {
+		return ""
+
+	}
+	return val.(string)
 }
 
 func (c *Ctx) Success(data any) core.Result {

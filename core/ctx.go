@@ -30,6 +30,9 @@ type Ctx interface {
 	Success(data any) Result
 	Fail(code int, msg string) Result
 
+	// 获取值
+	Param(key string) string
+
 	// 记录错误
 	Err(err error)
 	// 最后一个错误
