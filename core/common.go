@@ -11,6 +11,7 @@ const (
 	ProtocolHTTP = "HTTP"
 	ProtocolGRPC = "GRPC"
 	ProtocolCRON = "CRON"
+	ProtocolWS   = "WEBSOCKET"
 )
 
 const (

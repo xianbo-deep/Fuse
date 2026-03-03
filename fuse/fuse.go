@@ -5,9 +5,13 @@ import (
 	"Fuse/cronx"
 	"Fuse/grpcx"
 	"Fuse/httpx"
+	"context"
+	"log"
 	"net"
 	"net/http"
-	"sync"
+	"os"
+	"os/signal"
+	"time"
 )
 
 const (
@@ -77,19 +81,20 @@ func (fs *Fuse) CRON() *cronx.Engine {
 
 // 启动服务
 func (fs *Fuse) Run(httpAddr string, grpcAddr string) error {
-	var wg sync.WaitGroup
+	var httpServer *http.Server
 	if httpAddr != "" {
-		wg.Add(1)
+		httpServer = &http.Server{
+			Addr:    httpAddr,
+			Handler: fs.httpEngine,
+		}
 		go func() {
-			defer wg.Done()
-			_ = http.ListenAndServe(httpAddr, fs.httpEngine)
+			_ = httpServer.ListenAndServe()
 		}()
 	}
 
 	if grpcAddr != "" {
-		wg.Add(1)
+
 		go func() {
-			defer wg.Done()
 			lis, err := net.Listen("tcp", grpcAddr)
 			if err != nil {
 				panic(err) // 监听端口失败直接报错
@@ -99,7 +104,29 @@ func (fs *Fuse) Run(httpAddr string, grpcAddr string) error {
 	}
 	// 启动定时任务
 	fs.cronEngine.Start()
-	wg.Wait()
 
+	// 优雅停机
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	// 阻塞等待
+	<-quit
+
+	// 关闭服务
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown:", err)
+	}
+
+	// 优雅关闭 gRPC
+	fs.grpcEngine.Server().GracefulStop()
+	// 关闭 Cron
+	cronCtx := fs.cronEngine.Stop()
+	select {
+	case <-ctx.Done():
+		log.Fatal("CRON engine stop timeout")
+	case <-cronCtx.Done():
+		log.Fatal("CRON engine stopped")
+	}
 	return nil
 }
