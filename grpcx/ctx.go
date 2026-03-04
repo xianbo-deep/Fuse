@@ -123,6 +123,14 @@ func (c *Ctx) Errors() []error {
 	return out
 }
 
+func (c *Ctx) Param(key string) string {
+	return ""
+}
+
+func (c *Ctx) Query(key string) string {
+	return ""
+}
+
 func (c *Ctx) Bind(data any) error {
 	return errors.New("GRPC does not support Bind")
 }

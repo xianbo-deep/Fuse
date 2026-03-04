@@ -121,6 +121,14 @@ func (c *Ctx) FailWithError(err error) core.Result {
 	return c.Fail(core.CodeInternal, err.Error())
 }
 
+func (c *Ctx) Param(key string) string {
+	return ""
+}
+
+func (c *Ctx) Query(key string) string {
+	return ""
+}
+
 func (c *Ctx) Bind(v any) error {
 	return errors.New("cron engine does not support request binding")
 }

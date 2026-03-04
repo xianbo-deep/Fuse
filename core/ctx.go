@@ -31,6 +31,11 @@ type Ctx interface {
 	Fail(code int, msg string) Result
 	FailWithError(err error) Result
 
+	// 获取路径参数
+	Param(key string) string
+	// 获取查询参数
+	Query(key string) string
+
 	// 读取数据到结构体中
 	Bind(v any) error
 
