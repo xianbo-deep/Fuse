@@ -11,14 +11,18 @@ import (
 
 type Engine struct {
 	router *Router
-	mws    []core.HandlerFunc
 	pool   sync.Pool
+	*RouterGroup
 }
 
 func New() *Engine {
 	e := &Engine{
 		router: NewRouter(),
+	}
+	e.RouterGroup = &RouterGroup{
+		prefix: "",
 		mws:    make([]core.HandlerFunc, 0),
+		engine: e,
 	}
 	e.pool.New = func() any {
 		c := NewCtx(context.Background())
@@ -31,28 +35,6 @@ func Default() *Engine {
 	e := New()
 	e.Use(middleware.Defaults()...)
 	return e
-}
-
-// 注入中间件
-func (e *Engine) Use(middleware ...core.HandlerFunc) {
-	e.mws = append(e.mws, middleware...)
-}
-
-// 常见请求方法
-func (e *Engine) Get(path string, handler core.HandlerFunc) {
-	e.router.Add(core.MethodGet, path, handler)
-}
-
-func (e *Engine) Post(path string, handler core.HandlerFunc) {
-	e.router.Add(core.MethodPost, path, handler)
-}
-
-func (e *Engine) Put(path string, handler core.HandlerFunc) {
-	e.router.Add(core.MethodPut, path, handler)
-}
-
-func (e *Engine) Delete(path string, handler core.HandlerFunc) {
-	e.router.Add(core.MethodDelete, path, handler)
 }
 
 func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -87,8 +69,8 @@ func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	c.Set(core.CtxKeyPath, request.URL.Path)
 
 	// 根据请求路径匹配业务方法
-	h, params := e.router.Match(request.Method, request.URL.Path)
-	if h == nil {
+	hs, params := e.router.Match(request.Method, request.URL.Path)
+	if hs == nil {
 		c.Render(core.Fail(core.CodeNotFound, "未找到路由"))
 		return
 	}
@@ -98,8 +80,7 @@ func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		c.Set("param-"+k, v)
 	}
 	// 组装中间件
-	c.handlers = append(c.handlers, e.mws...)
-	c.handlers = append(c.handlers, h)
+	c.handlers = append(c.handlers, hs...)
 
 	// 执行中间件
 	c.resetHandlers()
