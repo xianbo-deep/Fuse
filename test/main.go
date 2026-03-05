@@ -13,13 +13,13 @@ func main() {
 	app.Use(middleware.Defaults()...)
 
 	httpSrv := app.HTTP()
-	httpSrv.Get("/ping/:id", func(c fuse.Context) fuse.Result {
+	httpSrv.GET("/ping/:id", func(c fuse.Context) fuse.Result {
 		id := c.Param("id")
 		log.Printf("id: %s", id)
 		return c.Success(fuse.H{"message": "pong"}).WithHttpStatus(http.StatusInternalServerError)
 	})
 
-	if err := app.Run(":8080", ":9090"); err != nil {
+	if err := app.Run(); err != nil {
 		panic(err)
 	}
 }
