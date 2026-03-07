@@ -45,6 +45,7 @@ func (wsc *WsContext) SendJSON(obj interface{}) error {
 	return nil
 }
 
+// 关闭TCP连接
 func (wsc *WsContext) Close() error {
 	return wsc.Conn.Close()
 }
