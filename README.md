@@ -1,6 +1,13 @@
-# Fuse
+<h1 align="center">Fuse</h1>
 
-一个轻量级、协议无关的 Go 服务端框架骨架。
+<p align="center">
+  <strong>一个轻量级、协议无关的 Go 服务端框架骨架</strong>
+</p>
+
+<p align="center">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white" />
+</p>
+<br />
 
 
 Fuse 旨在提供统一的服务端开发体验。通过高度抽象的 Context + Middleware 模型，它将 HTTP、gRPC、Cron、WebSocket、SSE 等多种协议的处理流程归一化，让开发者能以一致的范式构建服务。
