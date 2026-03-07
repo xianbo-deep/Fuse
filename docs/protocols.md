@@ -1,70 +1,56 @@
-# 协议说明
+# 协议与连接分发
 
-## 单端口协议分发
+Fuse 框架的核心特性之一是支持在单端口上同时运行 HTTP/1.1 和 HTTP/2 (gRPC) 服务。这是通过 TCP 层面的流量分析与分发实现的。
 
-**实现单端口协议分发需要在TCP层对请求进行预读，将流量分发到不同的处理器**
+## 核心组件：Multiplexer (分发器)
 
-### 预读
+`mux.Multiplexer` 是协议分发的核心组件。它接管了底层的 TCP 监听，负责接受所有连接，并根据协议类型将连接分发给不同的处理引擎。
 
-TCP本质是**字节流**，没有消息边界
+### 工作流程
 
-- 正常读取字节会导致**字节在缓冲区丢失**
-- 使用`MSG_PEEK`可以实现**读取数据且防止字节丢失**
-  - 从`net.Conn`读取部分字节到`bufio.Reader`，这部分字节在`net.Conn`丢失，但是会进入`bufio.Reader`的缓冲区
+1.  **监听**: `fuse.Run` 启动时，首先在指定端口创建一个 TCP 监听器 (`net.Listener`)。
+2.  **接收连接**: `Multiplexer` 循环调用 `Accept` 接收客户端连接。
+3.  **封装连接**: 每个新连接被封装为 `FuseConn`，这是一个带有缓冲读取能力的连接包装器。
+4.  **预读识别**: 读取连接的前几个字节（Peek），根据特征判断协议类型。
+    *   **HTTP/1.1**: 检查是否以 HTTP 方法 (`GET`, `POST` 等) 开头。
+    *   **HTTP/2**: 检查是否有各个 HTTP/2 连接前奏 (`PRI * HTTP/2.0...`)。
+5.  **分发**:
+    *   识别为 HTTP/1.1 的连接推送到 `HTTP1Listener`。
+    *   识别为 HTTP/2 的连接推送到 `HTTP2Listener`。
+    *   无法识别的协议将被关闭。
 
-具体需要对`net.Conn`对象进行包装
-- 读取数据时先读取`bufio.Reader`的缓存，再读取`net.Conn`的剩余字节
-- 包装后的对象可以给后续应用层协议复用，因为它们只接受`net.Conn`对象
-- 需要实现`net.Conn`接口
+## 核心技术实现
 
-通过预读的前几个字节，可以判断连接的协议类型：
+### 1. FuseConn 与 预读 (Peeking)
 
-**HTTP/1.1**
-- 纯文本协议。
-- 报文以方法名开头：`GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `OPTIONS`, `CONNECT`, `TRACE`。
-- 读取前 8 个字节即可进行匹配。
+标准 `net.Conn` 读取数据后，数据就会从缓冲区移出，后续处理器无法再次读取。为了实现协议识别，必须能够"偷看"数据而不消耗它们。
 
-**HTTP/2 (h2c)**
-- 二进制协议。
-- 定义了 **固定连接前奏**：`PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`。
-- 读取到 `PRI *` 即可确定是 HTTP/2 (用于 gRPC)。
+`FuseConn` 组合了 `net.Conn` 和 `bufio.Reader`：
+*   **预读**: 使用 `bufio.Reader.Peek()` 读取头部字节进行匹配。这些数据仍然保留在缓冲区中。
+*   **读取**: 当上层协议（如 `http.Server`）读取数据时，`FuseConn` 优先返回缓冲区中的数据，然后再从底层 Socket 读取。
 
-**Websocket**
-- 基于 HTTP 协议握手。
-- 分发器将其识别为 HTTP/1.1。
-- 在 HTTP处理器 (`httpx` 或 `wsx`) 内部解析 Header，若包含 `Upgrade: websocket` 则升级连接。
+### 2. FakeListener (虚拟监听器)
 
-**SSE (Server-Sent Events)**
-- 基于 HTTP 长连接。
-- 分发器将其识别为 HTTP/1.1。
-- 响应头特征：
-  ```
-  Content-Type: text/event-stream
-  Cache-Control: no-cache
-  Connection: keep-alive
-  ```
+Go 标准库的 `http.Server` 和 `grpc.Server` 都依赖 `net.Listener` 接口来获取连接。为了复用这些标准组件，Fuse 实现了 `FakeListener`。
 
-### 连接分发逻辑
+*   `FakeListener` 实现了 `net.Listener` 接口。
+*   它不直接绑定端口，而是通过一个 Go Channel 接收来自 `Multiplexer` 的连接。
+*   `Accept` 方法只是从 Channel 中取出已经完成握手和协议识别的连接。
 
-底层使用 TCP 进行监听 (`mux.Multiplexer`)。
-1.  `Accept()` 获取原始 TCP 连接。
-2.  将其封装为 `FuseConn`。
-3.  设置 **握手超时**（默认 3 秒），防止恶意连接耗尽资源。
-4.  预读字节，进行协议匹配 (`IsHTTP1`, `IsHTTP2`)。
-5.  匹配成功后，将 `FuseConn` 推送到对应的虚拟监听器 (`FakeListener`)。
+## 支持的协议详解
 
-### 虚拟监听器 (Fake Listener)
+### HTTP/1.1 & WebSocket & SSE
 
-虚拟监听器是适配 Go 标准库 `net.Listener` 接口的关键组件。
-- 它不直接监听端口，而是通过通道 (`chan net.Conn`) 接收来自 `Multiplexer` 分发的连接。
-- `http.Server` 或 `grpc.Server` 使用这个虚拟监听器启动服务。
-- 当应用层调用 `Serve()` 时，会从虚拟监听器的通道中取出连接进行处理。
+*   **HTTP/1.1**: 标准文本协议。通过匹配请求方法（`GET`, `POST`, `PUT`, `DELETE` 等）识别。
+*   **WebSocket**: 握手阶段是标准的 HTTP/1.1 请求。连接被分发到 HTTP 引擎后，由 `wsx` 包处理 Upgrade 头并升级协议。
+*   **SSE (Server-Sent Events)**: 本质是长连接的 HTTP 请求。由 `ssex` 包处理。
 
-### gRPC 集成
+### HTTP/2 (gRPC)
 
-Fuse 通过 `grpcx` 包集成了 gRPC，并实现了与 HTTP 处理器风格一致的中间件机制。
+*   **gRPC**: 默认使用 HTTP/2 协议。
+*   **识别特征**: HTTP/2 连接建立时须发送固定的 24 字节前奏 `PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`。Fuse 通过匹配此前奏来识别 gRPC 流量。
 
-**核心机制**
-- **Interceptors (拦截器)**: 使用 `UnaryInterceptor` 和 `StreamInterceptor` 拦截所有 gRPC 请求。
-- **Context 适配**: 将 `context.Context` 封装为 `core.Ctx` (具体为 `grpcx.Ctx`)，使得 gRPC 方法可以使用与 HTTP 相同的中间件和上下文操作 API。
-- **协议共存**: 可以在同一个端口上运行，通过 `mux` 进行流量分发。
+## 安全与超时
+
+为了防止攻击者建立连接后不发送数据导致资源耗尽，`Multiplexer` 在接收连接后会设置一个短暂的读取超时（默认 3 秒）。如果在该时间内无法完成协议识别，连接将被强制关闭。
+
