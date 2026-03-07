@@ -3,33 +3,30 @@ package wsx
 import (
 	"Fuse/core"
 	"encoding/json"
-	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
 type WsContext struct {
 	core.Ctx
-	Conn    *websocket.Conn
-	mu      *sync.Mutex
-	MsgType int
-	Data    []byte
+	Conn      *websocket.Conn
+	MsgType   int
+	Data      []byte
+	WriteChan chan<- []byte // 只写通道
 }
 
-func NewWsContext(c core.Ctx, conn *websocket.Conn, msgType int, data []byte, mu *sync.Mutex) *WsContext {
+func NewWsContext(c core.Ctx, conn *websocket.Conn, msgType int, data []byte, writeChan chan<- []byte) *WsContext {
 	return &WsContext{
-		Conn:    conn,
-		Ctx:     c,
-		MsgType: msgType,
-		Data:    data,
-		mu:      mu,
+		Conn:      conn,
+		Ctx:       c,
+		MsgType:   msgType,
+		Data:      data,
+		WriteChan: writeChan,
 	}
 }
 
-func (wsc *WsContext) Send(msgType int, data []byte) error {
-	wsc.mu.Lock()
-	defer wsc.mu.Unlock()
-	return wsc.Conn.WriteMessage(msgType, data)
+func (wsc *WsContext) Send(data []byte) {
+	wsc.WriteChan <- data
 }
 
 func (wsc *WsContext) BindJSON(obj interface{}) error {
@@ -43,5 +40,11 @@ func (wsc *WsContext) SendJSON(obj interface{}) error {
 		return err
 	}
 
-	return wsc.Conn.WriteMessage(websocket.TextMessage, data)
+	wsc.Send(data)
+
+	return nil
+}
+
+func (wsc *WsContext) Close() error {
+	return wsc.Conn.Close()
 }

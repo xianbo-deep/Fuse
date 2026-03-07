@@ -75,10 +75,23 @@ func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.Handle
 		if err != nil {
 			return c.Fail(core.CodeInternal, err.Error())
 		}
-		defer conn.Close()
+
+		// 用于监听客户端是否断连
+		done := make(chan struct{}, 1)
 
 		// 锁
-		var mu *sync.Mutex
+		mu := &sync.Mutex{}
+
+		var once sync.Once
+
+		// 写泵通道
+		writeChan := make(chan []byte, 256)
+
+		// 获取泵对象
+		pump := NewPump(conn, done, writeChan, mu)
+
+		// 起一个协程 开启写泵
+		go pump.WritePump()
 
 		// 设置读取超时
 		e := conn.SetReadDeadline(time.Now().Add(cfg.WaitTimeout))
@@ -93,13 +106,16 @@ func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.Handle
 		})
 
 		// 开启一个协程跑心跳检测
-		done := make(chan struct{}, 1)
 		defer func() {
-			select {
-			case <-done:
-			default:
-				close(done)
-			}
+			once.Do(func() {
+				select {
+				case <-done:
+				default:
+					close(done)
+				}
+				close(writeChan)
+				conn.Close()
+			})
 		}()
 		go func() {
 			// 创建定时器
@@ -131,7 +147,7 @@ func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.Handle
 			if err != nil {
 				break
 			}
-			wsctx := NewWsContext(c, conn, msgType, data, mu)
+			wsctx := NewWsContext(c, conn, msgType, data, writeChan)
 
 			// 执行业务函数
 			if err = wshandlerFunc(wsctx); err != nil {
