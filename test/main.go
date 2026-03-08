@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	app := fuse.New()
+	app := fuse.Default()
 
 	app.Use(middleware.Defaults()...)
 

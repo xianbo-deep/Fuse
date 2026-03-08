@@ -12,25 +12,27 @@ type Matcher func(*FuseConn) bool
 type Handler func(*FuseConn)
 
 // 多路复用器
-
+type protocol struct {
+	matcher  Matcher
+	listener *FakeListener
+}
 type Multiplexer struct {
-	http1Listener *FakeListener
-	http2Listener *FakeListener
+	protocols []*protocol
+	addr      net.Addr
 }
 
 func NewMultiplexer(addr net.Addr) *Multiplexer {
 	return &Multiplexer{
-		http1Listener: NewFakeListener(addr),
-		http2Listener: NewFakeListener(addr),
+		protocols: make([]*protocol, 0),
+		addr:      addr,
 	}
 }
 
 // 暴露监听器
-func (mux *Multiplexer) HTTP1Listener() *FakeListener {
-	return mux.http1Listener
-}
-func (mux *Multiplexer) HTTP2Listener() *FakeListener {
-	return mux.http2Listener
+func (mux *Multiplexer) Match(m Matcher) *FakeListener {
+	ln := NewFakeListener(mux.addr)
+	mux.protocols = append(mux.protocols, &protocol{matcher: m, listener: ln})
+	return ln
 }
 
 // 分发
@@ -42,17 +44,20 @@ func (mux *Multiplexer) Serve(conn net.Conn) {
 	_ = fc.SetReadDeadline(time.Now().Add(3 * time.Second))
 	defer fc.SetReadDeadline(time.Time{}) // 清除超时
 
-	if IsHTTP1(fc) {
-		mux.http1Listener.Push(fc)
-		return
-	}
-	if IsHTTP2(fc) {
-		mux.http2Listener.Push(fc)
-		return
+	for _, p := range mux.protocols {
+		if p.matcher(fc) {
+			p.listener.Push(fc)
+			return
+		}
 	}
 	// 未知协议
 	preview, _ := fc.Peek(8)
-	log.Printf("Unknow Protocol from %s, preview: %s", conn.RemoteAddr(), string(preview))
+	// 可能没有传输数据
+	if len(preview) == 0 {
+		_ = conn.Close()
+		return
+	}
+	log.Printf("Unknow protocol from %s, preview: %s", conn.RemoteAddr(), string(preview))
 	// 关闭底层连接
 	_ = conn.Close()
 }

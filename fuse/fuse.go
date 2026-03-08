@@ -5,12 +5,12 @@ import (
 	"Fuse/cronx"
 	"Fuse/grpcx"
 	"Fuse/httpx"
+	"Fuse/middleware"
 	"Fuse/mux"
 	"Fuse/wsx"
 	"context"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -36,50 +36,69 @@ var NewError = core.NewError
 
 type Fuse struct {
 	// 引擎
-	httpEngine *httpx.Engine
-	grpcEngine *grpcx.Engine
+	drivers map[string]mux.Driver
+	// 定时任务
 	cronEngine *cronx.Engine
-
 	// 全局中间件
 	mws []core.HandlerFunc
 }
 
 func New() *Fuse {
+	mws := make([]core.HandlerFunc, 0)
+	mws = append(mws, middleware.Defaults()...)
 	return &Fuse{
-		httpEngine: httpx.New(),
-		grpcEngine: grpcx.New(),
 		cronEngine: cronx.New(),
+		drivers:    make(map[string]mux.Driver, 0),
+		mws:        mws,
 	}
 }
 
-func (fs *Fuse) Default() *Fuse {
-	return &Fuse{
-		httpEngine: httpx.Default(),
-		grpcEngine: grpcx.Default(),
-		cronEngine: cronx.Default(),
+func Default() *Fuse {
+	f := New()
+	f.Register("http", httpx.NewDriver(httpx.New()), false)
+	f.Register("grpc", grpcx.NewDriver(grpcx.New()), false)
+	return f
+}
+
+func RunWithMws() *Fuse {
+	f := Default()
+	for _, d := range f.drivers {
+		d.ApplyMiddlewares(f.mws...)
 	}
+	return f
 }
 
 // 挂载中间件
 func (fs *Fuse) Use(mws ...core.HandlerFunc) {
 	fs.mws = append(fs.mws, mws...)
 
-	// 下发给底层引擎
-	fs.httpEngine.Use(mws...)
-	fs.grpcEngine.Use(mws...)
-	fs.cronEngine.Use(mws...)
+	// 下发给底层驱动
+	for _, d := range fs.drivers {
+		d.ApplyMiddlewares(mws...)
+	}
 }
 
 // 返回引擎
 func (fs *Fuse) HTTP() *httpx.Engine {
-	return fs.httpEngine
+	if d, ok := fs.drivers["http"].(*httpx.Driver); ok {
+		return d.Engine()
+	}
+	return nil
 }
 
 func (fs *Fuse) GRPC() *grpcx.Engine {
-	return fs.grpcEngine
+	if d, ok := fs.drivers["grpc"].(*grpcx.Driver); ok {
+		return d.Engine()
+	}
+	return nil
 }
 func (fs *Fuse) CRON() *cronx.Engine {
 	return fs.cronEngine
+}
+
+// 返回Driver
+func (fs *Fuse) Driver(name string) mux.Driver {
+	return fs.drivers[name]
 }
 
 // 启动服务
@@ -97,27 +116,35 @@ func (fs *Fuse) Run(addr string) error {
 	muxer := mux.NewMultiplexer(ln.Addr())
 
 	// 启动服务
-	httpServer := &http.Server{
-		Handler: fs.httpEngine,
+	for name, driver := range fs.drivers {
+		listener := muxer.Match(driver.Match())
+		if listener != nil {
+			go func(name string, driver mux.Driver, listener net.Listener) {
+				log.Printf("[FUSE] Driver [%s] is starting...", name)
+				if err := driver.Serve(listener); err != nil {
+					log.Printf("[FUSE] Driver [%s] error: %v", name, err)
+				}
+			}(name, driver, listener)
+		}
 	}
-
-	go func() {
-		if err := httpServer.Serve(muxer.HTTP1Listener()); err != nil {
-			log.Fatal(err)
-		}
-	}()
-
-	go func() {
-		if err := fs.grpcEngine.Server().Serve(muxer.HTTP2Listener()); err != nil {
-			log.Fatal(err)
-		}
-	}()
 	// 启动分发器进行协议分发
-	muxer.ServeLoop(ln)
+	go muxer.ServeLoop(ln)
 
 	// 启动定时任务
 	fs.cronEngine.Start()
 
+	return fs.gracefulStop(ln)
+}
+
+func (fs *Fuse) Register(name string, driver mux.Driver, applyGlobalMws bool) {
+	// 将已有中间件给到新驱动
+	if applyGlobalMws && len(fs.mws) > 0 {
+		driver.ApplyMiddlewares(fs.mws...)
+	}
+	fs.drivers[name] = driver
+}
+
+func (fs *Fuse) gracefulStop(ln net.Listener) error {
 	// 优雅停机
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
@@ -128,23 +155,26 @@ func (fs *Fuse) Run(addr string) error {
 	if ln != nil {
 		ln.Close()
 	}
-
 	// 关闭服务
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Fatal("[FUSE]: Server forced to shutdown:", err)
+
+	for name, driver := range fs.drivers {
+		log.Printf("[FUSE] Driver [%s] is stopping...", name)
+		if err := driver.Stop(ctx); err != nil {
+			log.Printf("[FUSE] Driver [%s] error: %v", name, err)
+		}
 	}
 
-	// 优雅关闭 gRPC
-	fs.grpcEngine.Server().GracefulStop()
-	// 关闭 Cron
-	cronCtx := fs.cronEngine.Stop()
-	select {
-	case <-ctx.Done():
-		log.Fatal("[FUSE]: CRON engine stop timeout")
-	case <-cronCtx.Done():
-		log.Fatal("[FUSE]: CRON engine stopped")
+	if fs.cronEngine != nil {
+		cronCtx := fs.cronEngine.Stop()
+		select {
+		case <-cronCtx.Done():
+			log.Printf("[FUSE] CRON engine stopped")
+		case <-ctx.Done():
+			log.Printf("[FUSE] CRON engine stop timeout")
+		}
 	}
+
 	return nil
 }

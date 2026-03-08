@@ -37,3 +37,10 @@ if strings.Contains(request.Header.Get("Accept"), "text/event-stream") {
 - 用户无需关心心跳机制、双向通信如何实现，可直接从`WsContext`直接获取客户端发来的信息类型与信息
 - 用户可直接调用`WsContext`的`Send()`方法发送信息给客户端，底层已经做好封装
   - 底层基于Channel发送信息，将信息发送到channel，由消息泵通过其内部封装的`conn`对象消费channel中的信息
+
+# 2026-03-08
+
+今日实现协议动态注册，重构了很大一部分代码，具体如下
+
+- 引入`Driver`接口，包括`Serve()`方法、`Stop()`方法、`ApplyMiddlewares()`方法、`Match()`方法，**用户可根据实际需求实现这个接口，从而传入自定义的驱动**
+- 将`Multiplexer`结构体进行重构，使用`protocol`结构体存储`Matcher`与`FakeListener`，有利于后续扩展协议树，从而加快匹配速度，且可以根据传入的`net.Addr`
