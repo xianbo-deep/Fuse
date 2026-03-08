@@ -11,7 +11,8 @@ type Matcher func(*FuseConn) bool
 
 type Handler func(*FuseConn)
 
-// 分发器
+// 多路复用器
+
 type Multiplexer struct {
 	http1Listener *FakeListener
 	http2Listener *FakeListener
@@ -51,12 +52,6 @@ func (mux *Multiplexer) Serve(conn net.Conn) {
 	}
 	// 未知协议
 	preview, _ := fc.Peek(8)
-
-	// 可能没有传输数据
-	if len(preview) == 0 {
-		_ = conn.Close()
-		return
-	}
 	log.Printf("Unknow Protocol from %s, preview: %s", conn.RemoteAddr(), string(preview))
 	// 关闭底层连接
 	_ = conn.Close()

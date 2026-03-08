@@ -113,9 +113,7 @@ func (fs *Fuse) Run(addr string) error {
 		}
 	}()
 	// 启动分发器进行协议分发
-	go func() {
-		muxer.ServeLoop(ln)
-	}()
+	muxer.ServeLoop(ln)
 
 	// 启动定时任务
 	fs.cronEngine.Start()
