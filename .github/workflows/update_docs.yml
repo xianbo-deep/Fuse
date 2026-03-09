@@ -6,7 +6,7 @@ on:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
-    workflow_dispatch:
+  workflow_dispatch:
 
 env:
   DEPLOY_DIR: "/www/wwwroot/fuse.xbzhong.cn"
