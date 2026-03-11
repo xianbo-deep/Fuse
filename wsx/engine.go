@@ -12,8 +12,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// WsHandlerFunc 是 func(ctx *WsContext) error 的类型别名，用户需要传入 [WsHandlerFunc] 以进行 Http 到 Websocket 的协议升级。
 type WsHandlerFunc func(ctx *WsContext) error
 
+// WebsocketConfig Websocket模块的配置。
+//
+// 待完善。
 type WebsocketConfig struct {
 	PingInterval   time.Duration // 发送心跳的间隔
 	WaitTimeout    time.Duration // 等待的超时时间
@@ -28,7 +32,7 @@ var defaultWebsocketConfig = WebsocketConfig{
 	WaitTimeout: time.Second * 60,
 }
 
-// Upgrade 转换器 把用户写的 [WsHandlerFunc] 转换成 [core.HandlerFunc]
+// Upgrade 协议升级器，将你传入的 [WsHandlerFunc] 转换成 [core.HandlerFunc]，供 Http 模块调用。
 func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.HandlerFunc {
 	var cfg WebsocketConfig
 	if len(config) != 0 {
@@ -109,7 +113,6 @@ func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.Handle
 			return conn.SetReadDeadline(time.Now().Add(cfg.WaitTimeout))
 		})
 
-		// 开启一个协程跑心跳检测
 		defer func() {
 			once.Do(func() {
 				select {
@@ -121,6 +124,7 @@ func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.Handle
 				conn.Close()
 			})
 		}()
+		// 开启一个协程跑心跳检测
 		go func() {
 			// 创建定时器
 			ticker := time.NewTicker(cfg.PingInterval)
@@ -138,6 +142,7 @@ func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.Handle
 					err = conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(cfg.WaitTimeout))
 					mu.Unlock()
 					if err != nil {
+						conn.Close()
 						return
 					}
 				}

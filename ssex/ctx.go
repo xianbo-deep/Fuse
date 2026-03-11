@@ -20,6 +20,7 @@ type Stream struct {
 	done   chan struct{}
 }
 
+// NewStream 返回 [Stream] 实例。
 func NewStream(ctx *httpx.Ctx) *Stream {
 	return &Stream{
 		ctx:    ctx,
@@ -28,6 +29,7 @@ func NewStream(ctx *httpx.Ctx) *Stream {
 	}
 }
 
+// errClosed 连接被客户端关闭。
 var errClosed = errors.New("connection closed by client")
 
 // Send 从服务端发送数据给客户端
@@ -95,7 +97,6 @@ func (s *Stream) Send(event string, data any) error {
 // 使用定时器每隔10s执行一次 ping ，防止 TCP 连接无字节传输时网关（如Nginx）对连接进行掐断。
 //
 // 对用户请求的 Context 的 Done 通道进行监听，在用户断连时可以停止心跳检测，防止资源泄漏。
-//
 func (s *Stream) startHeartPingPong() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()

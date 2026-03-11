@@ -33,7 +33,7 @@ func (d *Driver) Serve(ln net.Listener) error {
 	return d.server.Serve(ln)
 }
 
-// Match 返回
+// Match 返回协议适配器。
 func (d *Driver) Match() mux.Matcher {
 	return mux.IsHTTP2
 }

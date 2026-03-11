@@ -2,14 +2,16 @@ package ssex
 
 import (
 	"errors"
+	"net/http"
+
 	"github.com/xianbo-deep/Fuse/core"
 	"github.com/xianbo-deep/Fuse/httpx"
-	"net/http"
 )
 
-// SSEHandlerFunc 是
+// SSEHandlerFunc 是 func(c core.Ctx, stream *Stream) error 的类型别名，用户需要返回这个类型方法用于 Http 到 SSE 的升级。
 type SSEHandlerFunc func(c core.Ctx, stream *Stream) error
 
+// Upgrade 协议升级器，用户将用户传入的 [SSEHandlerFunc] 转换成 HTTP 模块需要的 [core.HandlerFunc]。
 func Upgrade(sseHandler SSEHandlerFunc) core.HandlerFunc {
 	return func(c core.Ctx) core.Result {
 		// 类型断言

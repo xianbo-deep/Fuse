@@ -3,11 +3,12 @@ package httpx
 import (
 	"context"
 	"errors"
-	"github.com/xianbo-deep/Fuse/core"
-	"github.com/xianbo-deep/Fuse/middleware"
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/xianbo-deep/Fuse/core"
+	"github.com/xianbo-deep/Fuse/middleware"
 )
 
 type Engine struct {
@@ -38,6 +39,9 @@ func Default() *Engine {
 	return e
 }
 
+// ServeHTTP HTTP 协议下框架执行的核心逻辑。
+//
+// 引擎 [Engine] 实现这个方法才可以传入 [http.Server] 执行
 func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	// 创建上下文
 	c := e.pool.Get().(*Ctx)

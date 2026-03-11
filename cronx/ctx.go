@@ -41,7 +41,7 @@ type Ctx struct {
 //
 // ctx: 可选的底层 context.Context，如果为 nil 将使用 context.Background()。
 //
-// 返回值: 初始化后的 Ctx 指针，values 字段已分配空映射。
+// 返回值: 初始化后的 [Ctx] 指针，values 字段已分配空映射。
 func NewCtx(ctx context.Context) *Ctx {
 	if ctx == nil {
 		ctx = context.Background()

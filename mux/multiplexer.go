@@ -7,20 +7,29 @@ import (
 	"time"
 )
 
+// Matcher 是 func(*FuseConn) bool 的类型别名，为协议适配器，内部需要实现对协议类型的判断。
 type Matcher func(*FuseConn) bool
 
 type Handler func(*FuseConn)
 
-// 多路复用器
 type protocol struct {
 	matcher  Matcher
 	listener *FakeListener
 }
+
+// Multiplexer 多路复用器。
+//
+// 负责
+//
+//   - 监听端口，处理连接
+//   - 根据内部已注册的协议列表找到连接对应的虚拟监听器，对连接进行分发
+//   - 接收用户自定义驱动 [Driver] 并将对应的虚拟监听器 [FakeListener] 进行返回，将用户自定义的驱动集成到框架中
 type Multiplexer struct {
 	protocols []*protocol
 	addr      net.Addr
 }
 
+// NewMultiplexer 根据传入的 [net.Addr] 返回 *[Multiplexer] 实例。
 func NewMultiplexer(addr net.Addr) *Multiplexer {
 	return &Multiplexer{
 		protocols: make([]*protocol, 0),
@@ -28,14 +37,16 @@ func NewMultiplexer(addr net.Addr) *Multiplexer {
 	}
 }
 
-// 暴露监听器
+// Match 接收 [Matcher] 参数，在多路复用器 [Multiplexer] 中进行虚拟监听器 [FakeListener] 的注册并返回给用户。
 func (mux *Multiplexer) Match(m Matcher) *FakeListener {
 	ln := NewFakeListener(mux.addr)
 	mux.protocols = append(mux.protocols, &protocol{matcher: m, listener: ln})
 	return ln
 }
 
-// 分发
+// Serve 根据传入的连接从已注册的协议列表进行分发。
+//
+// 遍历协议列表并使用对应的 [Matcher] 进行匹配。
 func (mux *Multiplexer) Serve(conn net.Conn) {
 	// 包装
 	fc := NewFuseConn(conn)
@@ -62,7 +73,7 @@ func (mux *Multiplexer) Serve(conn net.Conn) {
 	_ = conn.Close()
 }
 
-// 监听
+// ServeLoop 负责监听连接，阻塞执行，开启新的协程对新连接进行分发。
 func (mux *Multiplexer) ServeLoop(ln net.Listener) {
 	for {
 		// 获取连接对象

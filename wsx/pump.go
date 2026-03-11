@@ -21,6 +21,7 @@ type Pump struct {
 	mu        *sync.Mutex
 }
 
+// NewPump 返回一个 [Pump] 实例。
 func NewPump(conn *websocket.Conn, done chan struct{}, writeChan chan []byte, mu *sync.Mutex) *Pump {
 	return &Pump{
 		writeChan: writeChan,
@@ -30,6 +31,13 @@ func NewPump(conn *websocket.Conn, done chan struct{}, writeChan chan []byte, mu
 	}
 }
 
+// WritePump 写泵，从服务端发送消息给客户端。
+//
+// 负责
+//
+//   - 监听 writeChan 通道，当你调用 [WsContext] 的 Send 方法时，它会将消息推送到 writeChan 通道，写泵在这里真正地将消息推送到客户端。
+//   - 监听 done 通道，当客户端断连，可以释放写泵资源。
+//   - 设置写超时时间，防止客户端恶意占用连接导致资源浪费。
 func (p *Pump) WritePump() {
 	for {
 		select {

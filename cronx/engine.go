@@ -39,7 +39,7 @@ func Default() *Engine {
 
 // Use 给当前引擎挂载中间件。
 //
-// 对传入的中间件实现动态传参。
+// 可传递一个或多个中间件。
 func (e *Engine) Use(mws ...core.HandlerFunc) {
 	e.mws = append(e.mws, mws...)
 }

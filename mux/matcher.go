@@ -2,6 +2,7 @@ package mux
 
 import "strings"
 
+// IsHTTP1 HTTP1的协议匹配器 [Matcher]。
 func IsHTTP1(fc *FuseConn) bool {
 	b, err := fc.Peek(8)
 	if err != nil {
@@ -18,6 +19,7 @@ func IsHTTP1(fc *FuseConn) bool {
 		strings.HasPrefix(method, "TRACE")
 }
 
+// IsHTTP2 HTTP2的协议匹配器 [Matcher]。
 func IsHTTP2(fc *FuseConn) bool {
 	b, err := fc.Peek(24)
 	if err != nil {

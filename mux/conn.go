@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// FuseConn 是 net.Conn 的包装器，为协议多路复用（multiplexing）提供增强功能。
+// FuseConn 是 [net.Conn] 的包装器，为协议多路复用（multiplexing）提供增强功能。
 //
 // 它封装了原始的 TCP 连接，并添加了带缓冲的读取器和预读（peek）能力。
 //
