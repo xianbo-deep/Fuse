@@ -27,11 +27,11 @@ package fuse
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 
 	"github.com/xianbo-deep/Fuse/core"
@@ -159,6 +159,7 @@ func (fs *Fuse) Driver(name string) mux.Driver {
 //
 // 功能: 1.监听端口 2.启动多路复用器 3.启动所有驱动 4.启动定时任务 5.优雅停机
 func (fs *Fuse) Run(addr string) error {
+	printBanner()
 	if addr == "" {
 		addr = ":8080"
 	}
@@ -192,6 +193,24 @@ func (fs *Fuse) Run(addr string) error {
 	return fs.gracefulStop(ln)
 }
 
+func printBanner() {
+	const colorCyan = "\033[1;36m"
+	const colorReset = "\033[0m"
+
+	banner := `
+    F U S E  |  Multi Protocol Framework
+    ----------------------------------------------
+     ███████╗██╗   ██╗███████╗███████╗
+     ██╔════╝██║   ██║██╔════╝██╔════╝
+     █████╗  ██║   ██║███████╗█████╗  
+     ██╔══╝  ██║   ██║╚════██║██╔══╝  
+     ██║     ╚██████╔╝███████║███████╗
+     ╚═╝      ╚═════╝ ╚══════╝╚══════╝
+    `
+	fmt.Println(colorCyan + banner + colorReset)
+	fmt.Printf("Fuse Framework starting\n")
+}
+
 // Register 注册新的协议驱动
 //
 // 注册时可选是否自动应用已配置的全局中间件
@@ -211,61 +230,29 @@ func (fs *Fuse) gracefulStop(ln net.Listener) error {
 	// 阻塞等待
 	<-quit
 
-	log.Println("[FUSE] Shutting down server...")
-
-	// 关闭监听服务，停止接收新的连接
+	// 关闭监听服务
 	if ln != nil {
 		ln.Close()
 	}
-
-	// 创建带超时的上下文，控制整体停机时间
+	// 关闭服务
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var wg sync.WaitGroup
-
-	// 并发关闭所有驱动
 	for name, driver := range fs.drivers {
-		wg.Add(1)
-		go func(n string, d mux.Driver) {
-			defer wg.Done()
-			log.Printf("[FUSE] Driver [%s] is stopping...", n)
-			if err := d.Stop(ctx); err != nil {
-				log.Printf("[FUSE] Driver [%s] error: %v", n, err)
-			} else {
-				log.Printf("[FUSE] Driver [%s] stopped", n)
-			}
-		}(name, driver)
+		log.Printf("[FUSE] Driver [%s] is stopping...", name)
+		if err := driver.Stop(ctx); err != nil {
+			log.Printf("[FUSE] Driver [%s] error: %v", name, err)
+		}
 	}
 
-	// 并没有并发关闭 Cron，因为 Cron 的 Stop 本身返回 Context，需要等待
-	// 但为了统一超时控制，也放入 goroutine 更好
 	if fs.cronEngine != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			cronCtx := fs.cronEngine.Stop()
-			select {
-			case <-cronCtx.Done():
-				log.Printf("[FUSE] CRON engine stopped")
-			case <-ctx.Done():
-				log.Printf("[FUSE] CRON engine stop timeout")
-			}
-		}()
-	}
-
-	// 等待所有任务完成或超时
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Println("[FUSE] Server exited gracefully")
-	case <-ctx.Done():
-		log.Println("[FUSE] Server exited with timeout")
+		cronCtx := fs.cronEngine.Stop()
+		select {
+		case <-cronCtx.Done():
+			log.Printf("[FUSE] CRON engine stopped")
+		case <-ctx.Done():
+			log.Printf("[FUSE] CRON engine stop timeout")
+		}
 	}
 
 	return nil
