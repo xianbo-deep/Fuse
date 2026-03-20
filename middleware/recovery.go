@@ -17,7 +17,7 @@ func Recovery() core.HandlerFunc {
 				c.Err(err)
 
 				c.Abort()
-				res = core.Fail(core.CodeInternal, "出现Panic")
+				res = core.Fail(core.CodeInternal, "catch panic from service")
 			}
 		}()
 

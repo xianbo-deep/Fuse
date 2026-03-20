@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"log"
 	"strings"
 
 	"github.com/xianbo-deep/Fuse/core"
@@ -35,8 +36,10 @@ func (r *Router) Add(method, pattern string, handler HandlerChain) {
 		r.routes[method] = &node{}
 	}
 
-	r.routes[method].insert(pattern, pattern)
-
+	err := r.routes[method].insert(pattern, pattern)
+	if err != nil {
+		log.Printf("add %s %s error: %v", method, pattern, err)
+	}
 	key := method + "-" + pattern
 
 	// 存储处理器

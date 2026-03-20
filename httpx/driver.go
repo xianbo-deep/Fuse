@@ -4,21 +4,44 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/xianbo-deep/Fuse/core"
 	"github.com/xianbo-deep/Fuse/mux"
 )
 
+type Config struct {
+	IdleTimeout       time.Duration // 空闲连接超时时间
+	ReadTimeout       time.Duration // 服务端读超时时间
+	ReadHeaderTimeout time.Duration // 服务端读请求头超时时间
+	WriteTimeout      time.Duration // 客户端写超时时间
+	MaxHeaderBytes    int           // 限制请求头大小
+}
+
+func DefaultConfig() Config {
+	return Config{
+		IdleTimeout:       30 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1MB
+	}
+}
+
 // Driver 是 http 模块的驱动，实现了 [mux.Driver] 接口。
+//
+// 它负责服务的配置，启动底层Server。
 type Driver struct {
 	engine *Engine
 	server *http.Server
+	cfg    Config
 }
 
 // NewDriver 返回一个 *[Driver] 实例
-func NewDriver(engine *Engine) *Driver {
+func NewDriver(engine *Engine, config Config) *Driver {
 	return &Driver{
 		engine: engine,
+		cfg:    config,
 	}
 }
 
@@ -26,7 +49,12 @@ func NewDriver(engine *Engine) *Driver {
 // d.server.Serve(ln) 调用了 [mux.FakeListener] 的 Accept 方法，同时底层为每个请求开启一个协程，执行了 [Engine] 的 ServeHTTP 方法。
 func (d *Driver) Serve(ln net.Listener) error {
 	d.server = &http.Server{
-		Handler: d.engine,
+		Handler:           d.engine,
+		ReadHeaderTimeout: d.cfg.ReadHeaderTimeout,
+		ReadTimeout:       d.cfg.ReadTimeout,
+		WriteTimeout:      d.cfg.WriteTimeout,
+		IdleTimeout:       d.cfg.IdleTimeout,
+		MaxHeaderBytes:    d.cfg.MaxHeaderBytes,
 	}
 	return d.server.Serve(ln)
 }

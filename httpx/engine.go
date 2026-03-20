@@ -9,10 +9,11 @@ import (
 	"sync"
 
 	"github.com/xianbo-deep/Fuse/core"
-	"github.com/xianbo-deep/Fuse/middleware"
 )
 
 // Engine 是 Http 模块的底层引擎。
+//
+// 它负责业务逻辑的处理和中间件调用。
 type Engine struct {
 	router *Router
 	pool   sync.Pool
@@ -33,12 +34,6 @@ func New() *Engine {
 		c := NewCtx(context.Background(), e)
 		return c
 	}
-	return e
-}
-
-func Default() *Engine {
-	e := New()
-	e.Use(middleware.Defaults()...)
 	return e
 }
 

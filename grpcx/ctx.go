@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/xianbo-deep/Fuse/core"
 	"google.golang.org/grpc/metadata"
@@ -32,7 +31,6 @@ type Ctx struct {
 	index    int
 
 	errs []error
-	mu   sync.RWMutex
 
 	// 引擎
 	engine *Engine
@@ -58,26 +56,18 @@ func NewCtx(ctx context.Context, engine *Engine) *Ctx {
 // 实现core.Ctx接口
 
 // Context 返回底层的上下文。
-//
-// 使用读锁保证线程安全。
 func (c *Ctx) Context() context.Context {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return c.ctx
 }
 
 // WithContext 替换底层的上下文。
 //
 // 若传入上下文为空，使用默认的空上下文。
-//
-// 使用写锁保证线程安全。
 func (c *Ctx) WithContext(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	c.mu.Lock()
 	c.ctx = ctx
-	c.mu.Unlock()
 }
 
 // Set 在当前上下文中存储一个键值对。
@@ -86,9 +76,7 @@ func (c *Ctx) WithContext(ctx context.Context) {
 //
 // val: 存储的值，可以是任意类型。
 func (c *Ctx) Set(key string, value any) {
-	c.mu.Lock()
 	c.values[key] = value
-	c.mu.Unlock()
 }
 
 // Get 从当前上下文中获取已存储的值。
@@ -97,9 +85,7 @@ func (c *Ctx) Set(key string, value any) {
 //
 // 返回值: 存储的值和是否存在标志。如果键不存在，第二个返回值为 false。
 func (c *Ctx) Get(key string) (any, bool) {
-	c.mu.RLock()
 	v, ok := c.values[key]
-	c.mu.RUnlock()
 	return v, ok
 }
 

@@ -19,15 +19,17 @@ type Pump struct {
 	conn      *websocket.Conn
 	done      chan struct{}
 	mu        *sync.Mutex
+	cfg       Config
 }
 
 // NewPump 返回一个 [Pump] 实例。
-func NewPump(conn *websocket.Conn, done chan struct{}, writeChan chan []byte, mu *sync.Mutex) *Pump {
+func NewPump(conn *websocket.Conn, done chan struct{}, writeChan chan []byte, mu *sync.Mutex, cfg Config) *Pump {
 	return &Pump{
 		writeChan: writeChan,
 		conn:      conn,
 		done:      done,
 		mu:        mu,
+		cfg:       cfg,
 	}
 }
 
@@ -46,7 +48,7 @@ func (p *Pump) WritePump() {
 				return
 			}
 			p.mu.Lock()
-			p.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)) // 防止客户端网络不好 消息无法发出阻塞协程
+			p.conn.SetWriteDeadline(time.Now().Add(p.cfg.ClientWriteTimeout)) // 防止客户端网络不好 消息无法发出阻塞协程
 			p.conn.WriteMessage(websocket.TextMessage, msg)
 			p.mu.Unlock()
 		case <-p.done:

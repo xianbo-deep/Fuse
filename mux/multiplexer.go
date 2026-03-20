@@ -10,8 +10,6 @@ import (
 // Matcher 是 func(*FuseConn) bool 的类型别名，为协议适配器，内部需要实现对协议类型的判断。
 type Matcher func(*FuseConn) bool
 
-type Handler func(*FuseConn)
-
 type protocol struct {
 	matcher  Matcher
 	listener *FakeListener
@@ -25,15 +23,17 @@ type protocol struct {
 //   - 根据内部已注册的协议列表找到连接对应的虚拟监听器，对连接进行分发
 //   - 接收用户自定义驱动 [Driver] 并将对应的虚拟监听器 [FakeListener] 进行返回，将用户自定义的驱动集成到框架中
 type Multiplexer struct {
-	protocols []*protocol
-	addr      net.Addr
+	protocols        []*protocol
+	addr             net.Addr
+	handshakeTimeout time.Duration
 }
 
 // NewMultiplexer 根据传入的 [net.Addr] 返回 *[Multiplexer] 实例。
-func NewMultiplexer(addr net.Addr) *Multiplexer {
+func NewMultiplexer(addr net.Addr, d time.Duration) *Multiplexer {
 	return &Multiplexer{
-		protocols: make([]*protocol, 0),
-		addr:      addr,
+		protocols:        make([]*protocol, 0),
+		addr:             addr,
+		handshakeTimeout: d,
 	}
 }
 
@@ -52,7 +52,7 @@ func (mux *Multiplexer) Serve(conn net.Conn) {
 	fc := NewFuseConn(conn)
 
 	// 设置握手超时
-	_ = fc.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = fc.SetReadDeadline(time.Now().Add(mux.handshakeTimeout))
 	defer fc.SetReadDeadline(time.Time{}) // 清除超时
 
 	for _, p := range mux.protocols {

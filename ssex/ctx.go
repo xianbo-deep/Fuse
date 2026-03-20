@@ -18,14 +18,16 @@ type Stream struct {
 	reqCtx context.Context
 	mu     sync.Mutex
 	done   chan struct{}
+	cfg    Config
 }
 
 // NewStream 返回 [Stream] 实例。
-func NewStream(ctx *httpx.Ctx) *Stream {
+func NewStream(ctx *httpx.Ctx, cfg Config) *Stream {
 	return &Stream{
 		ctx:    ctx,
 		reqCtx: ctx.Request.Context(),
 		done:   make(chan struct{}),
+		cfg:    cfg,
 	}
 }
 
@@ -98,7 +100,7 @@ func (s *Stream) Send(event string, data any) error {
 //
 // 对用户请求的 Context 的 Done 通道进行监听，在用户断连时可以停止心跳检测，防止资源泄漏。
 func (s *Stream) startHeartPingPong() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(s.cfg.PingInterval)
 	defer ticker.Stop()
 
 	for {

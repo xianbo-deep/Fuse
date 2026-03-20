@@ -32,7 +32,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/xianbo-deep/Fuse/core"
 	"github.com/xianbo-deep/Fuse/cronx"
@@ -86,34 +85,32 @@ type Fuse struct {
 	cronEngine *cronx.Engine
 	// 全局中间件
 	mws []core.HandlerFunc
+	// 全局配置
+	config *core.Config
 }
 
 // New 返回 [Fuse] 实例。
-func New() *Fuse {
-	mws := make([]core.HandlerFunc, 0)
-	mws = append(mws, middleware.Defaults()...)
+func New(cfg ...*core.Config) *Fuse {
+	var config = core.DefaultConfig()
+	if len(cfg) > 0 {
+		config = cfg[0]
+	}
 	return &Fuse{
 		cronEngine: cronx.New(),
 		drivers:    make(map[string]mux.Driver, 0),
-		mws:        mws,
+		mws:        make([]core.HandlerFunc, 0),
+		config:     config,
 	}
 }
 
 // Default 创建默认配置的Fuse实例
+//
 // 包含HTTP和gRPC驱动
-func Default() *Fuse {
-	f := New()
-	f.Register("http", httpx.NewDriver(httpx.New()), false)
-	f.Register("grpc", grpcx.NewDriver(grpcx.New()), false)
-	return f
-}
-
-// RunWithMws 创建默认Fuse实例并应用全局中间件
-func RunWithMws() *Fuse {
-	f := Default()
-	for _, d := range f.drivers {
-		d.ApplyMiddlewares(f.mws...)
-	}
+func Default(cfg ...*core.Config) *Fuse {
+	f := New(cfg...)
+	f.Register("http", httpx.NewDriver(httpx.New(), httpx.DefaultConfig()), false)
+	f.Register("grpc", grpcx.NewDriver(grpcx.New(), grpcx.DefaultConfig()), false)
+	f.Use(middleware.Defaults()...)
 	return f
 }
 
@@ -161,7 +158,7 @@ func (fs *Fuse) Driver(name string) mux.Driver {
 func (fs *Fuse) Run(addr string) error {
 	printBanner()
 	if addr == "" {
-		addr = ":8080"
+		addr = fs.config.Port
 	}
 	// 监听端口
 	ln, err := net.Listen("tcp", addr)
@@ -170,7 +167,7 @@ func (fs *Fuse) Run(addr string) error {
 	}
 
 	// 获取分发器
-	muxer := mux.NewMultiplexer(ln.Addr())
+	muxer := mux.NewMultiplexer(ln.Addr(), fs.config.MuxHandShakeTimeout)
 
 	// 启动服务
 	for name, driver := range fs.drivers {
@@ -235,7 +232,7 @@ func (fs *Fuse) gracefulStop(ln net.Listener) error {
 		ln.Close()
 	}
 	// 关闭服务
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fs.config.StopTimeout)
 	defer cancel()
 
 	for name, driver := range fs.drivers {

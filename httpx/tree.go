@@ -1,6 +1,9 @@
 package httpx
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 // 节点类型
 const (
@@ -28,10 +31,10 @@ type node struct {
 // 终止条件为未匹配的路径 path 的长度为 0。
 //
 // 截取动态路由，若有则实行插入，否则计算未匹配路由和当前节点的公共前缀，根据公共前缀执行静态路由的插入。
-func (n *node) insert(path string, pattern string) {
+func (n *node) insert(path string, pattern string) error {
 	if len(path) == 0 {
 		n.pattern = pattern
-		return
+		return nil
 	}
 
 	// 识别是否是动态节点
@@ -73,7 +76,7 @@ func (n *node) insert(path string, pattern string) {
 					break
 				}
 				// 动态节点路径不符
-				panic("route conflict")
+				return errors.New("route conflict,please check your route")
 			}
 		}
 		if matchChild == nil {
@@ -87,8 +90,7 @@ func (n *node) insert(path string, pattern string) {
 			}
 			n.children = append(n.children, matchChild)
 		}
-		matchChild.insert(path[len(insertPath):], pattern)
-		return
+		return matchChild.insert(path[len(insertPath):], pattern)
 	}
 	// 计算公共前缀的长度
 	i := longestCommonPrefix(insertPath, n.path)
@@ -129,7 +131,7 @@ func (n *node) insert(path string, pattern string) {
 		// 找到了具有公共前缀的子节点
 		if matchChild != nil {
 			// 递归插入
-			matchChild.insert(path[i:], pattern)
+			return matchChild.insert(path[i:], pattern)
 		} else {
 			child := &node{
 				path:     searchPath,
@@ -137,17 +139,18 @@ func (n *node) insert(path string, pattern string) {
 			}
 			n.children = append(n.children, child)
 
-			child.insert(path[len(insertPath):], pattern)
+			return child.insert(path[len(insertPath):], pattern)
 		}
 
 	} else {
 		if len(insertPath) < len(path) {
-			n.insert(path[len(insertPath):], pattern)
+			return n.insert(path[len(insertPath):], pattern)
 		} else {
 			// 路径匹配完毕
 			n.pattern = pattern
 		}
 	}
+	return nil
 }
 
 // longestCommonPrefix 根据传入的字符串返回公共前缀长度。

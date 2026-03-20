@@ -12,38 +12,69 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Option 模式，用于用户进行链式自定义配置
+type Option func(*Config)
+
+// Config Websocket模块的配置。
+//
+// 待完善。
+type Config struct {
+	PingInterval       time.Duration // Ping 的时间间隔
+	WaitTimeout        time.Duration // 服务端等待的超时时间
+	ClientWriteTimeout time.Duration // 客户端写的超时时间
+	AllowedOrigins     []string      // 允许跨域的域名列表
+}
+
+// WithPingInterval 设置 Ping 的间隔。
+func WithPingInterval(d time.Duration) Option {
+	return func(c *Config) {
+		c.PingInterval = d
+	}
+}
+
+// WithWaitTimeout 设置服务端等待超时时间。
+func WithWaitTimeout(d time.Duration) Option {
+	return func(c *Config) {
+		c.WaitTimeout = d
+	}
+}
+
+// WithClientWriteTimeout 设置客户端写的超时时间。
+func WithClientWriteTimeout(d time.Duration) Option {
+	return func(c *Config) {
+		c.ClientWriteTimeout = d
+	}
+}
+
+// WithAllowedOrigins 设置允许跨域的域名列表。
+func WithAllowedOrigins(origins []string) Option {
+	return func(c *Config) {
+		c.AllowedOrigins = origins
+	}
+}
+
+// DefaultConfig 默认的 websocket 配置。
+func DefaultConfig() Config {
+	return Config{
+		// PingInterval 每次 ping 间隔时间: 54s
+		PingInterval: time.Second * 54,
+		// WaitTimeout 等待客户端响应超时时间: 60s
+		WaitTimeout: time.Second * 60,
+		// ClientWriteTimeout 客户端写超时时间
+		ClientWriteTimeout: 10 * time.Second,
+		// AllowedOrigins 允许跨域的域名列表
+		AllowedOrigins: []string{},
+	}
+}
+
 // WsHandlerFunc 是 func(ctx *WsContext) error 的类型别名，用户需要传入 [WsHandlerFunc] 以进行 Http 到 Websocket 的协议升级。
 type WsHandlerFunc func(ctx *WsContext) error
 
-// WebsocketConfig Websocket模块的配置。
-//
-// 待完善。
-type WebsocketConfig struct {
-	PingInterval   time.Duration // 发送心跳的间隔
-	WaitTimeout    time.Duration // 等待的超时时间
-	AllowedOrigins []string
-}
-
-// defaultWebsocketConfig 默认的 websocket 配置。
-var defaultWebsocketConfig = WebsocketConfig{
-	// PingInterval 每次 ping 间隔时间: 54s
-	PingInterval: time.Second * 54,
-	// WaitTimeout 等待客户端响应超时时间: 60s
-	WaitTimeout: time.Second * 60,
-}
-
 // Upgrade 协议升级器，将你传入的 [WsHandlerFunc] 转换成 [core.HandlerFunc]，供 Http 模块调用。
-func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.HandlerFunc {
-	var cfg WebsocketConfig
-	if len(config) != 0 {
-		cfg = config[0]
-	}
-	// 填充默认值
-	if cfg.PingInterval == 0 {
-		cfg.PingInterval = defaultWebsocketConfig.PingInterval
-	}
-	if cfg.WaitTimeout == 0 {
-		cfg.WaitTimeout = defaultWebsocketConfig.WaitTimeout
+func Upgrade(wshandlerFunc WsHandlerFunc, opts ...Option) core.HandlerFunc {
+	var cfg = DefaultConfig()
+	for _, opt := range opts {
+		opt(&cfg)
 	}
 
 	// 获取升级器
@@ -96,7 +127,7 @@ func Upgrade(wshandlerFunc WsHandlerFunc, config ...WebsocketConfig) core.Handle
 		writeChan := make(chan []byte, 256)
 
 		// 获取泵对象
-		pump := NewPump(conn, done, writeChan, mu)
+		pump := NewPump(conn, done, writeChan, mu, cfg)
 
 		// 起一个协程 开启写泵
 		go pump.WritePump()

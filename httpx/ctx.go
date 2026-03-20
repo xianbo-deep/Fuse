@@ -6,10 +6,10 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/xianbo-deep/Fuse/core"
 )
@@ -35,16 +35,14 @@ type Ctx struct {
 	// 错误
 	errs []error
 
-	// 锁
-	mu sync.RWMutex
+	// 查询缓存
+	queryCache url.Values
 }
 
 // 实现core.Ctx接口
 
 // Context
 func (c *Ctx) Context() context.Context {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return c.ctx
 }
 
@@ -52,21 +50,16 @@ func (c *Ctx) WithContext(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	c.mu.Lock()
 	c.ctx = ctx
-	c.mu.Unlock()
 }
 
 func (c *Ctx) Set(key string, value any) {
-	c.mu.Lock()
 	c.values[key] = value
-	c.mu.Unlock()
 }
 
 func (c *Ctx) Get(key string) (any, bool) {
-	c.mu.RLock()
 	v, ok := c.values[key]
-	c.mu.RUnlock()
+
 	return v, ok
 }
 
@@ -91,8 +84,6 @@ func (c *Ctx) Abort() {
 }
 
 func (c *Ctx) Copy() core.Ctx {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	cp := &Ctx{
 		ctx:      c.ctx,
 		Writer:   c.Writer,
@@ -292,7 +283,11 @@ func (c *Ctx) Query(key string) string {
 	if c.Request == nil {
 		return ""
 	}
-	return c.Request.URL.Query().Get(key)
+	if c.queryCache == nil {
+		c.queryCache = c.Request.URL.Query()
+		return c.queryCache.Get(key)
+	}
+	return c.queryCache.Get(key)
 }
 
 func (c *Ctx) Success(data any) core.Result {
@@ -335,6 +330,7 @@ func (c *Ctx) reset() {
 
 	// 清空数据但保留底层容量
 	clear(c.values)
+	clear(c.queryCache)
 	clear(c.errs)
 	clear(c.handlers)
 

@@ -62,32 +62,34 @@ func (l *LRULimiter) GetLimiter(clientIP string, tokens, burst int) *rate.Limite
 
 // RateLimiterConfig 限流器配置。
 type RateLimiterConfig struct {
-	Tokens int // 每秒生成几个令牌
-	Burst  int // 桶的容量大小 决定可以同时处理几个请求
+	Tokens   int // 每秒生成几个令牌
+	Burst    int // 桶的容量大小 决定可以同时处理几个请求
+	Capacity int // 限流器个数
 }
 
-func NewRateLimiterConfig(tokens, burst int) *RateLimiterConfig {
-	return &RateLimiterConfig{Tokens: tokens, Burst: burst}
-}
-
-var (
-	lruLimiter               = NewLRULimiter(10000)
-	defaultRateLimiterConfig = RateLimiterConfig{
-		Tokens: 10,
-		Burst:  1,
+func DefaultRateLimiterConfig() RateLimiterConfig {
+	return RateLimiterConfig{
+		Tokens:   10,
+		Burst:    1,
+		Capacity: 10000,
 	}
-)
+}
 
 // RateLimit 限流中间件。
 //
 // 使用 LRU 缓存缓存最近的有限个数的限流器，防止限流器数量太多导致 OOM 。
 func RateLimit(config ...RateLimiterConfig) core.HandlerFunc {
-	return func(c core.Ctx) core.Result {
-		var cfg = defaultRateLimiterConfig
-		if len(config) > 0 {
-			cfg.Burst = config[0].Burst
-			cfg.Tokens = config[0].Tokens
+	var cfg = DefaultRateLimiterConfig()
+	if len(config) > 0 {
+		cfg.Burst = config[0].Burst
+		cfg.Tokens = config[0].Tokens
+		if config[0].Capacity > 0 {
+			cfg.Capacity = config[0].Capacity
 		}
+	}
+	lruLimiter := NewLRULimiter(cfg.Capacity)
+	return func(c core.Ctx) core.Result {
+
 		clientIP := c.ClientIP()
 
 		limiter := lruLimiter.GetLimiter(clientIP, cfg.Tokens, cfg.Burst)
