@@ -77,7 +77,8 @@ func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	hs, params := e.router.Match(request.Method, request.URL.Path)
 	if hs == nil {
 		c.Err(errors.New("can not find handler with current route"))
-		c.Render(core.Fail(core.CodeNotFound, "未找到路由"))
+		c.Render(core.Fail(core.CodeNotFound, "can not find handler with current route"))
+		return
 	}
 
 	// 记录路径参数映射表
