@@ -207,7 +207,11 @@ func (c *Ctx) Render(res core.Result) {
 	c.JSON(status, res)
 }
 
-// 读取数据到结构体中
+// Bind 读取数据到结构体中。
+//
+// 优先级：JSON > Param > Query
+//
+// 已经设置的值不会被覆盖。
 func (c *Ctx) Bind(v any) error {
 	// 获取传入数据的值
 	val := reflect.ValueOf(v)
