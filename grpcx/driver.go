@@ -72,7 +72,6 @@ func NewDriver(engine *Engine, config Config, opts ...grpc.ServerOption) *Driver
 
 // Serve 初始化 GRPC server，并根据传入的 [net.Listener] 启动 GRPC 服务。
 func (d *Driver) Serve(ln net.Listener) error {
-	d.server = d.engine.Server()
 	return d.server.Serve(ln)
 }
 

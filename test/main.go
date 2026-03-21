@@ -1,13 +1,14 @@
 package main
 
 import (
+	"log"
+	"net/http"
+	"time"
+
 	"github.com/xianbo-deep/Fuse/fuse"
 	"github.com/xianbo-deep/Fuse/middleware"
 	"github.com/xianbo-deep/Fuse/ssex"
 	"github.com/xianbo-deep/Fuse/wsx"
-	"log"
-	"net/http"
-	"time"
 
 	"github.com/gorilla/websocket"
 )

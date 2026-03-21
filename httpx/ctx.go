@@ -1,9 +1,12 @@
 package httpx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -11,8 +14,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-playground/validator"
 	"github.com/xianbo-deep/Fuse/core"
 )
+
+// validate 结构体参数校验器。
+var validate = validator.New()
 
 // Ctx
 type Ctx struct {
@@ -204,19 +211,45 @@ func (c *Ctx) Render(res core.Result) {
 func (c *Ctx) Bind(v any) error {
 	// 获取传入数据的值
 	val := reflect.ValueOf(v)
-
 	// 必须要是指针并且指向结构体
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-		return errors.New("Bind: expected a pointer to a struct")
+		return errors.New("bind: expected pointer to struct")
 	}
 
+	if err := c.bindJSON(v); err != nil {
+		return err
+	}
+	if err := c.bindQuery(v); err != nil {
+		return err
+	}
+	if err := c.bindParam(v); err != nil {
+		return err
+	}
+	return validateStruct(v)
+}
+
+// 进行 JSON 参数解析
+func (c *Ctx) bindJSON(v any) error {
 	// 尝试解析JSON
-	if c.Request.Body != nil && c.Request.Header.Get("Content-Type") == "application/json" {
+	if c.Request.Body != nil && strings.Contains(c.Request.Header.Get("Content-Type"), "application/json") {
+		// 读取原始字节
+		bodyBytes, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			return err
+		}
+		// 重新放回请求头
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		// JSON格式错误
-		if err := json.NewDecoder(c.Request.Body).Decode(v); err != nil {
+		if err := json.Unmarshal(bodyBytes, v); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (c *Ctx) bindParam(v any) error {
+	// 获取传入数据的值
+	val := reflect.ValueOf(v)
 
 	// 解析结构体中的路由和查询参数
 	elem := val.Elem()
@@ -233,37 +266,98 @@ func (c *Ctx) Bind(v any) error {
 			continue
 		}
 
-		var valStr string
-		if paramTag := field.Tag.Get("param"); paramTag != "" {
-			valStr = c.Param(paramTag)
-		} else if queryTag := field.Tag.Get("query"); queryTag != "" {
-			valStr = c.Query(queryTag)
-		}
-
-		if valStr == "" {
+		// 已有的值不覆盖
+		if !fieldVal.IsZero() {
 			continue
 		}
 
-		switch fieldVal.Kind() {
-		case reflect.String:
-			fieldVal.SetString(valStr)
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			if intVal, err := strconv.ParseInt(valStr, 10, 64); err == nil {
-				fieldVal.SetInt(intVal)
-			}
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			if uintVal, err := strconv.ParseUint(valStr, 10, 64); err == nil {
-				fieldVal.SetUint(uintVal)
-			}
-		case reflect.Float32, reflect.Float64:
-			if floatVal, err := strconv.ParseFloat(valStr, 64); err == nil {
-				fieldVal.SetFloat(floatVal)
-			}
-		case reflect.Bool:
-			if boolVal, err := strconv.ParseBool(valStr); err == nil {
-				fieldVal.SetBool(boolVal)
-			}
+		var valStr string
+		if paramTag := field.Tag.Get("param"); paramTag != "" {
+			valStr = c.Param(paramTag)
 		}
+		if valStr == "" {
+			continue
+		}
+		if err := setField(fieldVal, valStr, field.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Ctx) bindQuery(v any) error {
+	// 获取传入数据的值
+	val := reflect.ValueOf(v)
+
+	// 解析结构体中的路由和查询参数
+	elem := val.Elem()
+	typ := elem.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		// 字段信息
+		field := typ.Field(i)
+		// 字段实际值
+		fieldVal := elem.Field(i)
+
+		// 小写字段不可渲染
+		if !fieldVal.CanSet() {
+			continue
+		}
+
+		// 已有的值不覆盖
+		if !fieldVal.IsZero() {
+			continue
+		}
+
+		var valStr string
+
+		if queryTag := field.Tag.Get("query"); queryTag != "" {
+			valStr = c.Query(queryTag)
+		}
+		if valStr == "" {
+			continue
+		}
+		if err := setField(fieldVal, valStr, field.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// 进行参数验证
+func validateStruct(v any) error {
+	return validate.Struct(v)
+}
+
+func setField(fieldVal reflect.Value, valStr string, fieldName string) error {
+	switch fieldVal.Kind() {
+	case reflect.String:
+		fieldVal.SetString(valStr)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		intVal, err := strconv.ParseInt(valStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("field %s parse int error: %v", fieldName, err)
+		}
+		fieldVal.SetInt(intVal)
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		uintVal, err := strconv.ParseUint(valStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("field %s parse uint error: %v", fieldName, err)
+		}
+		fieldVal.SetUint(uintVal)
+	case reflect.Float32, reflect.Float64:
+		floatVal, err := strconv.ParseFloat(valStr, 64)
+		if err != nil {
+			return fmt.Errorf("field %s parse float error: %v", fieldName, err)
+		}
+		fieldVal.SetFloat(floatVal)
+	case reflect.Bool:
+		boolVal, err := strconv.ParseBool(valStr)
+		if err != nil {
+			return fmt.Errorf("field %s parse bool error: %v", fieldName, err)
+		}
+		fieldVal.SetBool(boolVal)
 	}
 	return nil
 }
