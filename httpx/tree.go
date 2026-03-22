@@ -31,6 +31,13 @@ type node struct {
 // 终止条件为未匹配的路径 path 的长度为 0。
 //
 // 截取动态路由，若有则实行插入，否则计算未匹配路由和当前节点的公共前缀，根据公共前缀执行静态路由的插入。
+//
+// 参数说明：
+//
+//   - path: 当前还未匹配的剩余路径
+//   - pattern: 模式串 挂载的路由
+//   - isDynamic: 未匹配的剩余路径是否有动态节点
+//   - insertPath: 当前层需要进行插入的路径
 func (n *node) insert(path string, pattern string) error {
 	if len(path) == 0 {
 		n.pattern = pattern
@@ -92,6 +99,27 @@ func (n *node) insert(path string, pattern string) error {
 		}
 		return matchChild.insert(path[len(insertPath):], pattern)
 	}
+
+	if n.nodeType != normal || n.path == "" {
+		var matchChild *node
+		c := insertPath[0]
+		for _, child := range n.children {
+			if child.nodeType == normal && child.path[0] == c {
+				matchChild = child
+			}
+		}
+		if matchChild != nil {
+			return matchChild.insert(path, pattern)
+		} else {
+			child := &node{
+				path:     insertPath,
+				nodeType: normal,
+			}
+			n.children = append(n.children, child)
+			return child.insert(path[len(insertPath):], pattern)
+		}
+	}
+
 	// 计算公共前缀的长度
 	i := longestCommonPrefix(insertPath, n.path)
 
@@ -164,12 +192,20 @@ func longestCommonPrefix(a, b string) int {
 }
 
 // search 查找匹配的路由节点
+//
+// path 当前剩余的未匹配路径
 func (n *node) search(path string, params map[string]string) *node {
-	if len(path) < len(n.path) || !strings.HasPrefix(path, n.path) {
-		return nil
+	var searchPath string
+	if n.nodeType == normal {
+		// 动态类型节点不进行中断
+		if len(path) < len(n.path) || !strings.HasPrefix(path, n.path) {
+			return nil
+		}
+		searchPath = path[len(n.path):]
+	} else {
+		// 获取剩余未匹配的路径
+		searchPath = path
 	}
-	// 获取剩余未匹配的路径
-	searchPath := path[len(n.path):]
 
 	if len(searchPath) == 0 {
 		if n.pattern == "" {
@@ -183,7 +219,8 @@ func (n *node) search(path string, params map[string]string) *node {
 	// 静态查找
 	var matchChild *node
 	for _, child := range n.children {
-		if child.nodeType == normal && child.path[0] == c {
+		// 检查 child.path 是否为空
+		if child.nodeType == normal && len(child.path) > 0 && child.path[0] == c {
 			matchChild = child
 			break
 		}
