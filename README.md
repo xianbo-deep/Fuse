@@ -90,8 +90,8 @@ func main() {
 - [ ] CMUX 实现协议树
 - [x] CMUX 实现协议动态注册
 - [x] 增加更多通用中间件 (Limit, Trace)
-- [ ] WebSocket JSON 解析
-- [ ] HTTP 参数校验 (Validator)
+- [x] WebSocket JSON 解析
+- [x] HTTP 参数校验 (Validator)
 - [ ] 完善单元测试与 Benchmarks 对比
 - [x] 完善 GoDoc
 - [ ] 补充相关文档
